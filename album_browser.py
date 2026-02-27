@@ -7,7 +7,7 @@ import requests
 from bs4 import BeautifulSoup
 from colorama import init, Fore, Style
 
-init()  # Alustaa värituen (Windows/Linux/macOS)
+init()  # Initialize color support (Windows/Linux/macOS)
 
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".wav", ".ogg", ".m4a", ".aac", ".wma", ".opus", ".ape", ".alac", ".aiff", ".wv"}
 LOSSLESS_FORMATS = {"FLAC", "APE", "WAV", "AIFF", "WV", "ALAC"}
@@ -19,11 +19,11 @@ HTTP_HEADERS = {
                   "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 REQUEST_TIMEOUT = 10
-RATE_LIMIT = 2  # sekuntia pyyntöjen välillä
+RATE_LIMIT = 2  # seconds between requests
 
 
 def get_audio_files(directory: Path) -> list[Path]:
-    """Palauttaa kansion äänitiedostot aakkostettuina."""
+    """Returns audio files in the directory, sorted alphabetically."""
     return sorted(
         [f for f in directory.iterdir() if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS],
         key=lambda f: f.name.lower()
@@ -31,7 +31,7 @@ def get_audio_files(directory: Path) -> list[Path]:
 
 
 def format_file_size(size_bytes: int) -> str:
-    """Muotoilee tavumäärän luettavaan muotoon."""
+    """Formats a byte count into a human-readable string."""
     if size_bytes >= 1_073_741_824:
         return f"{size_bytes / 1_073_741_824:.1f} GB"
     if size_bytes >= 1_048_576:
@@ -42,15 +42,15 @@ def format_file_size(size_bytes: int) -> str:
 
 
 def _normalize(text: str) -> str:
-    """Normalisoi teksti vertailua varten (pienet kirjaimet, ylimääräiset välit pois)."""
+    """Normalizes text for comparison (lowercase, strips extra whitespace)."""
     return " ".join(text.lower().split())
 
 
 def _search_bandcamp(query: str, item_type: str) -> list[dict]:
-    """Hakee Bandcampista ja palauttaa listan tuloksista.
+    """Searches Bandcamp and returns a list of results.
 
-    item_type: 'a' = albumit, 'b' = artistit/bändit
-    Palauttaa listan: [{'name': str, 'artist': str, 'url': str, 'type': str}, ...]
+    item_type: 'a' = albums, 'b' = artists/bands
+    Returns a list: [{'name': str, 'artist': str, 'url': str, 'type': str}, ...]
     """
     params = {"q": query, "item_type": item_type, "page": 1}
     try:
@@ -79,7 +79,7 @@ def _search_bandcamp(query: str, item_type: str) -> list[dict]:
         url = url_el.get_text(strip=True) if url_el else ""
         subhead = subhead_el.get_text(strip=True) if subhead_el else ""
 
-        # Artistin nimi subheadista (albumi: "by Artisti", artisti: sijainti)
+        # Artist name from subhead (album: "by Artist", artist: location)
         artist = ""
         if item_type == "a" and subhead.lower().startswith("by "):
             artist = subhead[3:].strip()
@@ -91,27 +91,27 @@ def _search_bandcamp(query: str, item_type: str) -> list[dict]:
 
 
 def search_bandcamp(artist_name: str, album_name: str) -> tuple[str | None, str | None]:
-    """Hakee Bandcampista albumin tai artistin sivun.
+    """Searches Bandcamp for an album or artist page.
 
-    Palauttaa (url, match_type) missä match_type on 'album', 'artist' tai None.
-    Hakujärjestys: 1) albumihaku, 2) artistihaku.
+    Returns (url, match_type) where match_type is 'album', 'artist', or None.
+    Search order: 1) album search, 2) artist search.
     """
     artist_norm = _normalize(artist_name)
     album_norm = _normalize(album_name)
 
-    # 1. Hae albumia
+    # 1. Search for album
     query = f"{artist_name} {album_name}"
     results = _search_bandcamp(query, "a")
 
     for r in results:
         r_artist = _normalize(r["artist"])
         r_album = _normalize(r["name"])
-        # Tarkista onko artisti ja albumin nimi riittävän lähellä
+        # Check if artist and album name are close enough
         if artist_norm in r_artist or r_artist in artist_norm:
             if album_norm in r_album or r_album in album_norm:
                 return (r["url"], "album")
 
-    # Löyhempi haku: pelkkä artisti-match albumihaussa
+    # Looser match: artist-only match in album search
     for r in results:
         r_artist = _normalize(r["artist"])
         if artist_norm in r_artist or r_artist in artist_norm:
@@ -119,7 +119,7 @@ def search_bandcamp(artist_name: str, album_name: str) -> tuple[str | None, str 
 
     time.sleep(RATE_LIMIT)
 
-    # 2. Hae artistia
+    # 2. Search for artist
     results = _search_bandcamp(artist_name, "b")
 
     for r in results:
@@ -127,7 +127,7 @@ def search_bandcamp(artist_name: str, album_name: str) -> tuple[str | None, str 
         if artist_norm in r_name or r_name in artist_norm:
             return (r["url"], "artist")
 
-    # Palauta ensimmäinen artisti-tulos jos löytyy
+    # Return first artist result if found
     if results:
         return (results[0]["url"], "artist")
 
@@ -135,9 +135,9 @@ def search_bandcamp(artist_name: str, album_name: str) -> tuple[str | None, str 
 
 
 def _search_qobuz(query: str) -> list[dict]:
-    """Hakee Qobuzin kaupasta albumeja.
+    """Searches the Qobuz store for albums.
 
-    Palauttaa listan: [{'name': str, 'artist': str, 'url': str}, ...]
+    Returns a list: [{'name': str, 'artist': str, 'url': str}, ...]
     """
     search_url = f"{QOBUZ_SEARCH_URL}/{requests.utils.quote(query)}"
     try:
@@ -153,9 +153,9 @@ def _search_qobuz(query: str) -> list[dict]:
     soup = BeautifulSoup(resp.text, "html.parser")
     results = []
 
-    # Albumilinkit löytyvät <a href="/fi-en/album/..."> elementeistä
+    # Album links are found in <a href="/fi-en/album/..."> elements
     album_links = soup.find_all("a", href=lambda h: h and "/album/" in h)
-    # Suodata otsikkolinkit (parent div sisältää 'min-w-0' luokan)
+    # Filter for title links (parent div contains the 'min-w-0' class)
     title_links = [
         a for a in album_links
         if a.parent and "min-w-0" in (a.parent.get("class") or [])
@@ -166,7 +166,7 @@ def _search_qobuz(query: str) -> list[dict]:
         album_href = a.get("href", "")
         album_url = f"https://www.qobuz.com{album_href}" if album_href.startswith("/") else album_href
 
-        # Etsi artistilinkki samasta containerista
+        # Find artist link in the same container
         container = a.parent
         artist_links = (
             container.find_all("a", href=lambda h: h and "/interpreter/" in h)
@@ -180,9 +180,9 @@ def _search_qobuz(query: str) -> list[dict]:
 
 
 def search_qobuz(artist_name: str, album_name: str) -> tuple[str | None, str | None]:
-    """Hakee Qobuzista albumin sivun.
+    """Searches Qobuz for an album page.
 
-    Palauttaa (url, match_type) missä match_type on 'album' tai None.
+    Returns (url, match_type) where match_type is 'album' or None.
     """
     artist_norm = _normalize(artist_name)
     album_norm = _normalize(album_name)
@@ -190,7 +190,7 @@ def search_qobuz(artist_name: str, album_name: str) -> tuple[str | None, str | N
     query = f"{artist_name} {album_name}"
     results = _search_qobuz(query)
 
-    # Tarkka haku: artisti + albumi
+    # Exact match: artist + album
     for r in results:
         r_artist = _normalize(r["artist"])
         r_album = _normalize(r["name"])
@@ -198,7 +198,7 @@ def search_qobuz(artist_name: str, album_name: str) -> tuple[str | None, str | N
            (album_norm in r_album or r_album in album_norm):
             return (r["url"], "album")
 
-    # Löyhempi haku: pelkkä artisti-match
+    # Looser match: artist-only match
     for r in results:
         r_artist = _normalize(r["artist"])
         if artist_norm in r_artist or r_artist in artist_norm:
@@ -219,7 +219,7 @@ def generate_markdown_report(
     bandcamp_results: dict,
     qobuz_results: dict,
 ) -> Path:
-    """Generoi Markdown-raportin MD/result.md tiedostoon."""
+    """Generates a Markdown report to MD/result.md."""
     md_dir = script_dir / "MD"
     md_dir.mkdir(exist_ok=True)
     md_path = md_dir / "result.md"
@@ -227,16 +227,16 @@ def generate_markdown_report(
     lines = []
     now = datetime.now().strftime("%d.%m.%Y %H:%M")
 
-    # Otsikko
-    lines.append("# 🎵 Musiikkikirjasto")
+    # Header
+    lines.append("# 🎵 Music Library")
     lines.append("")
-    lines.append(f"> Skannaus: **{now}**  ")
-    lines.append(f"> Polku: `{music_root}`")
+    lines.append(f"> Scanned: **{now}**  ")
+    lines.append(f"> Path: `{music_root}`")
     lines.append("")
     lines.append("---")
     lines.append("")
 
-    # Artistit ja albumit
+    # Artists and albums
     for artist_info in artists_data:
         artist_name = artist_info["name"]
         lines.append(f"## 🎤 {artist_name}")
@@ -256,33 +256,33 @@ def generate_markdown_report(
                 fmt_display = f"**{fmt}**"
             else:
                 lossy = ", ".join(album["lossy_fmts"])
-                status = f"⚠️ *Ei-lossless: {lossy}*"
+                status = f"⚠️ *Non-lossless: {lossy}*"
                 fmt_display = f"`{fmt}`"
 
-            lines.append(f"- {icon} **{name}** — {fmt_display} — {count} kpl, {size} {status}")
+            lines.append(f"- {icon} **{name}** — {fmt_display} — {count} tracks, {size} {status}")
 
         lines.append("")
 
-    # Yhteenveto
+    # Summary
     lines.append("---")
     lines.append("")
-    lines.append("## 📊 Yhteenveto")
+    lines.append("## 📊 Summary")
     lines.append("")
-    lines.append("| Mittari | Määrä |")
+    lines.append("| Metric | Count |")
     lines.append("|:---|---:|")
-    lines.append(f"| 🎤 Artisteja | **{total_artists}** |")
-    lines.append(f"| 💿 Albumeita | **{total_albums}** |")
+    lines.append(f"| 🎤 Artists | **{total_artists}** |")
+    lines.append(f"| 💿 Albums | **{total_albums}** |")
     lines.append(f"| ✅ Lossless | **{total_lossless}** |")
-    lines.append(f"| ⚠️ Ei-lossless | **{total_non_lossless}** |")
+    lines.append(f"| ⚠️ Non-lossless | **{total_non_lossless}** |")
     lines.append("")
 
-    # Ostoslista
+    # Shopping list
     if shopping_list:
         lines.append("---")
         lines.append("")
-        lines.append("## 🛒 Ostoslista — Hankittava lossless-versio")
+        lines.append("## 🛒 Shopping List — Albums to Get in Lossless")
         lines.append("")
-        lines.append("| # | Artisti | Albumi | Formaatti | Linkki |")
+        lines.append("| # | Artist | Album | Format | Link |")
         lines.append("|---:|:---|:---|:---:|:---|")
 
         bc_found = 0
@@ -291,12 +291,12 @@ def generate_markdown_report(
         for i, (artist, album, lossy_fmts) in enumerate(shopping_list, 1):
             fmt_str = ", ".join(lossy_fmts)
 
-            # Etsi linkki
+            # Find purchase link
             link_str = "—"
             bc = bandcamp_results.get((artist, album))
             if bc and bc[0]:
                 url, match_type = bc
-                suffix = " (artisti)" if match_type != "album" else ""
+                suffix = " (artist)" if match_type != "album" else ""
                 link_str = f"[🔗 Bandcamp{suffix}]({url})"
                 bc_found += 1
             else:
@@ -309,15 +309,15 @@ def generate_markdown_report(
             lines.append(f"| {i} | **{artist}** | {album} | `{fmt_str}` | {link_str} |")
 
         lines.append("")
-        lines.append(f"> **Yhteensä {len(shopping_list)}** albumia hankittavana lossless-formaatissa.  ")
+        lines.append(f"> **Total {len(shopping_list)}** albums to acquire in lossless format.  ")
         if bandcamp_results:
-            lines.append(f"> Bandcamp-linkkejä löytyi: **{bc_found}** / {len(shopping_list)}  ")
+            lines.append(f"> Bandcamp links found: **{bc_found}** / {len(shopping_list)}  ")
         if qobuz_results:
-            lines.append(f"> Qobuz-linkkejä löytyi: **{qb_found}** / {len(shopping_list) - bc_found}")
+            lines.append(f"> Qobuz links found: **{qb_found}** / {len(shopping_list) - bc_found}")
         lines.append("")
     else:
         lines.append("")
-        lines.append("> ✅ **Kaikki albumit ovat lossless-formaatissa!**")
+        lines.append("> ✅ **All albums are in lossless format!**")
         lines.append("")
 
     md_path.write_text("\n".join(lines), encoding="utf-8")
@@ -325,7 +325,7 @@ def generate_markdown_report(
 
 
 def main():
-    # Tarkista liput
+    # Parse flags
     args = sys.argv[1:]
     no_bandcamp = "--no-bandcamp" in args
     no_qobuz = "--no-qobuz" in args
@@ -333,21 +333,21 @@ def main():
     args = [a for a in args if a not in ("--no-bandcamp", "--no-qobuz", "--no-report")]
 
     if len(args) < 1:
-        print(f"{Fore.RED}Käyttö: python album_browser.py <musiikkikansion_polku> [--no-bandcamp] [--no-qobuz] [--no-report]{Style.RESET_ALL}")
-        print(f"Esim:  python album_browser.py \"C:\\Users\\Käyttäjä\\Music\"")
-        print(f"       --no-bandcamp  Ohittaa Bandcamp-haun")
-        print(f"       --no-qobuz     Ohittaa Qobuz-haun")
-        print(f"       --no-report    Ohittaa MD-raportin generoinnin")
+        print(f"{Fore.RED}Usage: python album_browser.py <music_folder_path> [--no-bandcamp] [--no-qobuz] [--no-report]{Style.RESET_ALL}")
+        print(f"Example: python album_browser.py \"C:\\Users\\User\\Music\"")
+        print(f"         --no-bandcamp  Skip Bandcamp search")
+        print(f"         --no-qobuz     Skip Qobuz search")
+        print(f"         --no-report    Skip MD report generation")
         return
 
     music_root = Path(args[0])
 
     if not music_root.exists():
-        print(f"{Fore.RED}Kansiota ei löydy: {music_root}{Style.RESET_ALL}")
+        print(f"{Fore.RED}Directory not found: {music_root}{Style.RESET_ALL}")
         return
 
     print(f"{Fore.CYAN}╔══════════════════════════════════════════════════════════════╗")
-    print(f"║                    🎵  MUSIIKKIKIRJASTO  🎵                 ║")
+    print(f"║                    🎵  MUSIC LIBRARY  🎵                    ║")
     print(f"╚══════════════════════════════════════════════════════════════╝{Style.RESET_ALL}")
     print()
 
@@ -361,7 +361,7 @@ def main():
     total_lossless = 0
     total_non_lossless = 0
     shopping_list = []
-    artists_data = []  # Datan keräys MD-raporttia varten
+    artists_data = []  # Collect data for MD report
 
     for artist_dir in artist_dirs:
         artist_name = artist_dir.name
@@ -387,15 +387,15 @@ def main():
 
             total_albums += 1
 
-            # Selvitä albumin formaatit
+            # Determine album formats
             formats = sorted(set(f.suffix.lstrip(".").upper() for f in tracks))
             format_str = " / ".join(formats)
 
-            # Laske albumin kokonaiskoko
+            # Calculate total album size
             total_size = sum(f.stat().st_size for f in tracks)
             size_str = format_file_size(total_size)
 
-            # Selvitä häviöttömät ja häviölliset formaatit
+            # Determine lossless and lossy formats
             lossless_fmts = [fmt for fmt in formats if fmt in LOSSLESS_FORMATS]
             lossy_fmts = [fmt for fmt in formats if fmt not in LOSSLESS_FORMATS]
             all_lossless = len(lossy_fmts) == 0
@@ -408,7 +408,7 @@ def main():
                 total_non_lossless += 1
                 shopping_list.append((artist_name, album_name, lossy_fmts))
 
-            # Kerää albumidata raporttia varten
+            # Collect album data for report
             current_artist["albums"].append({
                 "name": album_name,
                 "format_str": format_str,
@@ -419,17 +419,17 @@ def main():
                 "is_loose": False,
             })
 
-            # Albumirivi
+            # Album row
             line = (
                 f"     ├── 💿 {Fore.WHITE}{album_name}{Style.RESET_ALL}"
                 f"  [{format_color}{format_str}{Style.RESET_ALL}]"
-                f" ({len(tracks)} kpl, {size_str})"
+                f" ({len(tracks)} tracks, {size_str})"
             )
             if not all_lossless:
-                line += f"  {Fore.RED}⚠️  Ei-lossless: {', '.join(lossy_fmts)}{Style.RESET_ALL}"
+                line += f"  {Fore.RED}⚠️  Non-lossless: {', '.join(lossy_fmts)}{Style.RESET_ALL}"
             print(line)
 
-        # Irralliset kappaleet (suoraan artistin kansiossa)
+        # Loose tracks (directly in the artist folder)
         if loose_files:
             total_albums += 1
             formats = sorted(set(f.suffix.lstrip(".").upper() for f in loose_files))
@@ -446,11 +446,11 @@ def main():
             else:
                 format_color = Fore.MAGENTA
                 total_non_lossless += 1
-                shopping_list.append((artist_name, "(Irrallisia kappaleita)", lossy_fmts))
+                shopping_list.append((artist_name, "(Loose tracks)", lossy_fmts))
 
-            # Kerää irrallisten kappaleiden data raporttia varten
+            # Collect loose tracks data for report
             current_artist["albums"].append({
-                "name": "(Irrallisia kappaleita)",
+                "name": "(Loose tracks)",
                 "format_str": format_str,
                 "track_count": len(loose_files),
                 "size_str": size_str,
@@ -460,35 +460,35 @@ def main():
             })
 
             line = (
-                f"     ├── 📁 {Fore.LIGHTYELLOW_EX}(Irrallisia kappaleita){Style.RESET_ALL}"
+                f"     ├── 📁 {Fore.LIGHTYELLOW_EX}(Loose tracks){Style.RESET_ALL}"
                 f"  [{format_color}{format_str}{Style.RESET_ALL}]"
-                f" ({len(loose_files)} kpl, {size_str})"
+                f" ({len(loose_files)} tracks, {size_str})"
             )
             if not all_lossless:
-                line += f"  {Fore.RED}⚠️  Ei-lossless: {', '.join(lossy_fmts)}{Style.RESET_ALL}"
+                line += f"  {Fore.RED}⚠️  Non-lossless: {', '.join(lossy_fmts)}{Style.RESET_ALL}"
             print(line)
 
         artists_data.append(current_artist)
         print()
 
-    # Yhteenveto
+    # Summary
     print(f"{Fore.CYAN}╔══════════════════════════════════════════════════════════════╗")
-    print(f"║                        YHTEENVETO                           ║")
+    print(f"║                          SUMMARY                            ║")
     print(f"╠══════════════════════════════════════════════════════════════╣{Style.RESET_ALL}")
-    print(f"║  {Fore.YELLOW}Artisteja:       {total_artists:6}{Style.RESET_ALL}                                  ║")
-    print(f"║  {Fore.WHITE}Albumeita:       {total_albums:6}{Style.RESET_ALL}                                  ║")
+    print(f"║  {Fore.YELLOW}Artists:         {total_artists:6}{Style.RESET_ALL}                                  ║")
+    print(f"║  {Fore.WHITE}Albums:          {total_albums:6}{Style.RESET_ALL}                                  ║")
     print(f"║  {Fore.GREEN}Lossless:        {total_lossless:6}{Style.RESET_ALL}                                  ║")
-    print(f"║  {Fore.MAGENTA}Ei-lossless:     {total_non_lossless:6}{Style.RESET_ALL}                                  ║")
+    print(f"║  {Fore.MAGENTA}Non-lossless:    {total_non_lossless:6}{Style.RESET_ALL}                                  ║")
     print(f"{Fore.CYAN}╚══════════════════════════════════════════════════════════════╝{Style.RESET_ALL}")
 
-    # Ostoslista
+    # Shopping list
     if shopping_list:
-        # Hae Bandcamp-linkit ostoslistan albumeille
+        # Fetch purchase links for shopping list albums
         bandcamp_results = {}
         qobuz_results = {}
         if not no_bandcamp or not no_qobuz:
             print()
-            print(f"  {Fore.CYAN}🔍 Haetaan ostolinkkejä...{Style.RESET_ALL}")
+            print(f"  {Fore.CYAN}🔍 Searching for purchase links...{Style.RESET_ALL}")
             for i, (artist, album, _) in enumerate(shopping_list, 1):
                 print(
                     f"  {Fore.CYAN}   ({i}/{len(shopping_list)}) {artist} – {album}...{Style.RESET_ALL}",
@@ -497,23 +497,23 @@ def main():
 
                 found = False
 
-                # 1. Bandcamp-haku
+                # 1. Bandcamp search
                 if not no_bandcamp:
                     url, match_type = search_bandcamp(artist, album)
                     bandcamp_results[(artist, album)] = (url, match_type)
                     if url:
                         tag = "💿" if match_type == "album" else "🎤"
-                        print(f" {Fore.GREEN}{tag} BC löytyi!{Style.RESET_ALL}")
+                        print(f" {Fore.GREEN}{tag} BC found!{Style.RESET_ALL}")
                         found = True
 
-                # 2. Qobuz-fallback (jos Bandcampista ei löytynyt)
+                # 2. Qobuz fallback (if not found on Bandcamp)
                 if not found and not no_qobuz:
                     if not no_bandcamp:
                         time.sleep(RATE_LIMIT)
                     url, match_type = search_qobuz(artist, album)
                     qobuz_results[(artist, album)] = (url, match_type)
                     if url:
-                        print(f" {Fore.GREEN}💿 Qobuz löytyi!{Style.RESET_ALL}")
+                        print(f" {Fore.GREEN}💿 Qobuz found!{Style.RESET_ALL}")
                         found = True
 
                 if not found:
@@ -524,22 +524,22 @@ def main():
 
         print()
         print(f"{Fore.RED}╔══════════════════════════════════════════════════════════════╗")
-        print(f"║          🛒  OSTOSLISTA – Hankittava lossless-versio        ║")
+        print(f"║        🛒  SHOPPING LIST – Albums to Get in Lossless        ║")
         print(f"╠══════════════════════════════════════════════════════════════╣{Style.RESET_ALL}")
         for artist, album, lossy_fmts in shopping_list:
             fmt_str = ', '.join(lossy_fmts)
             line = f"  {Fore.YELLOW}{artist}{Style.RESET_ALL} – {Fore.WHITE}{album}{Style.RESET_ALL}  [{Fore.MAGENTA}{fmt_str}{Style.RESET_ALL}]"
 
-            # Lisää Bandcamp-linkki jos löytyi
+            # Add Bandcamp link if found
             bc = bandcamp_results.get((artist, album))
             if bc and bc[0]:
                 url, match_type = bc
                 if match_type == "album":
                     line += f"  {Fore.CYAN}🔗 BC: {url}{Style.RESET_ALL}"
                 else:
-                    line += f"  {Fore.CYAN}🔗 BC: {url} (artisti){Style.RESET_ALL}"
+                    line += f"  {Fore.CYAN}🔗 BC: {url} (artist){Style.RESET_ALL}"
             else:
-                # Lisää Qobuz-linkki jos löytyi (fallback)
+                # Add Qobuz link if found (fallback)
                 qb = qobuz_results.get((artist, album))
                 if qb and qb[0]:
                     url, _ = qb
@@ -550,15 +550,15 @@ def main():
 
         bc_found = sum(1 for v in bandcamp_results.values() if v[0]) if bandcamp_results else 0
         qb_found = sum(1 for v in qobuz_results.values() if v[0]) if qobuz_results else 0
-        print(f"\n  {Fore.RED}Yhteensä {len(shopping_list)} albumia hankittavana lossless-formaatissa.{Style.RESET_ALL}")
+        print(f"\n  {Fore.RED}Total {len(shopping_list)} albums to acquire in lossless format.{Style.RESET_ALL}")
         if bandcamp_results:
-            print(f"  {Fore.CYAN}Bandcamp-linkkejä löytyi: {bc_found}/{len(shopping_list)}{Style.RESET_ALL}")
+            print(f"  {Fore.CYAN}Bandcamp links found: {bc_found}/{len(shopping_list)}{Style.RESET_ALL}")
         if qobuz_results:
-            print(f"  {Fore.GREEN}Qobuz-linkkejä löytyi: {qb_found}/{len(shopping_list) - bc_found}{Style.RESET_ALL}")
+            print(f"  {Fore.GREEN}Qobuz links found: {qb_found}/{len(shopping_list) - bc_found}{Style.RESET_ALL}")
     else:
-        print(f"\n  {Fore.GREEN}✅ Kaikki albumit ovat lossless-formaatissa!{Style.RESET_ALL}")
+        print(f"\n  {Fore.GREEN}✅ All albums are in lossless format!{Style.RESET_ALL}")
 
-    # Generoi MD-raportti
+    # Generate MD report
     if not no_report:
         script_dir = Path(__file__).resolve().parent
         md_path = generate_markdown_report(
@@ -573,7 +573,7 @@ def main():
             bandcamp_results=bandcamp_results if shopping_list else {},
             qobuz_results=qobuz_results if shopping_list else {},
         )
-        print(f"\n  {Fore.CYAN}📝 Raportti tallennettu: {md_path}{Style.RESET_ALL}")
+        print(f"\n  {Fore.CYAN}📝 Report saved: {md_path}{Style.RESET_ALL}")
 
 
 if __name__ == "__main__":
