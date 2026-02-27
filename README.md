@@ -27,7 +27,7 @@ pip install requests beautifulsoup4 colorama
 ## Usage
 
 ```bash
-python album_browser.py <music_folder_path> [--no-bandcamp] [--no-qobuz] [--no-report]
+python album_browser.py <music_folder_path> [--no-bandcamp] [--no-qobuz] [--no-report] [--all-links]
 ```
 
 ### Options
@@ -37,12 +37,14 @@ python album_browser.py <music_folder_path> [--no-bandcamp] [--no-qobuz] [--no-r
 | `--no-bandcamp` | Skip Bandcamp search |
 | `--no-qobuz` | Skip Qobuz search |
 | `--no-report` | Skip Markdown report generation |
+| `--all-links` | Fetch and display purchase links for **all** albums (lossless and non-lossless) inline in the album listing |
 
 ### Example
 
 ```bash
 python album_browser.py "C:\Users\User\Music"
 python album_browser.py ~/Music --no-bandcamp
+python album_browser.py ~/Music --all-links
 ```
 
 ## Expected folder structure

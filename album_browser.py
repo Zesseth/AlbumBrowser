@@ -218,8 +218,13 @@ def generate_markdown_report(
     shopping_list: list[tuple],
     bandcamp_results: dict,
     qobuz_results: dict,
+    all_album_links: dict | None = None,
 ) -> Path:
-    """Generates a Markdown report to MD/result.md."""
+    """Generates a Markdown report to MD/result.md.
+
+    all_album_links: optional dict {(artist, album): (url, match_type, source)} used to
+    add purchase links inline next to each album entry (--all-links mode).
+    """
     md_dir = script_dir / "MD"
     md_dir.mkdir(exist_ok=True)
     md_path = md_dir / "result.md"
@@ -259,7 +264,18 @@ def generate_markdown_report(
                 status = f"⚠️ *Non-lossless: {lossy}*"
                 fmt_display = f"`{fmt}`"
 
-            lines.append(f"- {icon} **{name}** — {fmt_display} — {count} tracks, {size} {status}")
+            link_md = ""
+            if all_album_links:
+                link_info = all_album_links.get((artist_name, name))
+                if link_info and link_info[0]:
+                    url, match_type, source = link_info
+                    if source == "bandcamp":
+                        suffix = " (artist)" if match_type != "album" else ""
+                        link_md = f" [🔗 Bandcamp{suffix}]({url})"
+                    elif source == "qobuz":
+                        link_md = f" [🔗 Qobuz]({url})"
+
+            lines.append(f"- {icon} **{name}** — {fmt_display} — {count} tracks, {size} {status}{link_md}")
 
         lines.append("")
 
@@ -310,9 +326,10 @@ def generate_markdown_report(
 
         lines.append("")
         lines.append(f"> **Total {len(shopping_list)}** albums to acquire in lossless format.  ")
-        if bandcamp_results:
+        show_source_counts = all_album_links is None
+        if show_source_counts and bandcamp_results:
             lines.append(f"> Bandcamp links found: **{bc_found}** / {len(shopping_list)}  ")
-        if qobuz_results:
+        if show_source_counts and qobuz_results:
             lines.append(f"> Qobuz links found: **{qb_found}** / {len(shopping_list) - bc_found}")
         lines.append("")
     else:
@@ -330,14 +347,16 @@ def main():
     no_bandcamp = "--no-bandcamp" in args
     no_qobuz = "--no-qobuz" in args
     no_report = "--no-report" in args
-    args = [a for a in args if a not in ("--no-bandcamp", "--no-qobuz", "--no-report")]
+    all_links = "--all-links" in args
+    args = [a for a in args if a not in ("--no-bandcamp", "--no-qobuz", "--no-report", "--all-links")]
 
     if len(args) < 1:
-        print(f"{Fore.RED}Usage: python album_browser.py <music_folder_path> [--no-bandcamp] [--no-qobuz] [--no-report]{Style.RESET_ALL}")
+        print(f"{Fore.RED}Usage: python album_browser.py <music_folder_path> [--no-bandcamp] [--no-qobuz] [--no-report] [--all-links]{Style.RESET_ALL}")
         print(f"Example: python album_browser.py \"C:\\Users\\User\\Music\"")
         print(f"         --no-bandcamp  Skip Bandcamp search")
         print(f"         --no-qobuz     Skip Qobuz search")
         print(f"         --no-report    Skip MD report generation")
+        print(f"         --all-links    Fetch and display purchase links for all albums inline")
         return
 
     music_root = Path(args[0])
@@ -362,6 +381,7 @@ def main():
     total_non_lossless = 0
     shopping_list = []
     artists_data = []  # Collect data for MD report
+    all_album_links: dict = {}  # Populated in --all-links mode
 
     for artist_dir in artist_dirs:
         artist_name = artist_dir.name
@@ -376,7 +396,8 @@ def main():
 
         total_artists += 1
         current_artist = {"name": artist_name, "albums": []}
-        print(f"  {Fore.YELLOW}🎤 {artist_name}{Style.RESET_ALL}")
+        if not all_links:
+            print(f"  {Fore.YELLOW}🎤 {artist_name}{Style.RESET_ALL}")
 
         for album_dir in album_dirs:
             album_name = album_dir.name
@@ -417,17 +438,19 @@ def main():
                 "all_lossless": all_lossless,
                 "lossy_fmts": lossy_fmts,
                 "is_loose": False,
+                "format_color": format_color,
             })
 
-            # Album row
-            line = (
-                f"     ├── 💿 {Fore.WHITE}{album_name}{Style.RESET_ALL}"
-                f"  [{format_color}{format_str}{Style.RESET_ALL}]"
-                f" ({len(tracks)} tracks, {size_str})"
-            )
-            if not all_lossless:
-                line += f"  {Fore.RED}⚠️  Non-lossless: {', '.join(lossy_fmts)}{Style.RESET_ALL}"
-            print(line)
+            # Album row (deferred in --all-links mode)
+            if not all_links:
+                line = (
+                    f"     ├── 💿 {Fore.WHITE}{album_name}{Style.RESET_ALL}"
+                    f"  [{format_color}{format_str}{Style.RESET_ALL}]"
+                    f" ({len(tracks)} tracks, {size_str})"
+                )
+                if not all_lossless:
+                    line += f"  {Fore.RED}⚠️  Non-lossless: {', '.join(lossy_fmts)}{Style.RESET_ALL}"
+                print(line)
 
         # Loose tracks (directly in the artist folder)
         if loose_files:
@@ -457,19 +480,113 @@ def main():
                 "all_lossless": all_lossless,
                 "lossy_fmts": lossy_fmts,
                 "is_loose": True,
+                "format_color": format_color,
             })
 
-            line = (
-                f"     ├── 📁 {Fore.LIGHTYELLOW_EX}(Loose tracks){Style.RESET_ALL}"
-                f"  [{format_color}{format_str}{Style.RESET_ALL}]"
-                f" ({len(loose_files)} tracks, {size_str})"
-            )
-            if not all_lossless:
-                line += f"  {Fore.RED}⚠️  Non-lossless: {', '.join(lossy_fmts)}{Style.RESET_ALL}"
-            print(line)
+            if not all_links:
+                line = (
+                    f"     ├── 📁 {Fore.LIGHTYELLOW_EX}(Loose tracks){Style.RESET_ALL}"
+                    f"  [{format_color}{format_str}{Style.RESET_ALL}]"
+                    f" ({len(loose_files)} tracks, {size_str})"
+                )
+                if not all_lossless:
+                    line += f"  {Fore.RED}⚠️  Non-lossless: {', '.join(lossy_fmts)}{Style.RESET_ALL}"
+                print(line)
 
         artists_data.append(current_artist)
+        if not all_links:
+            print()
+
+    # --all-links: fetch links for every album, then display tree with links inline
+    if all_links:
+        full_album_list = [
+            (a["name"], alb["name"])
+            for a in artists_data
+            for alb in a["albums"]
+        ]
+
+        if full_album_list and (not no_bandcamp or not no_qobuz):
+            print()
+            print(f"  {Fore.CYAN}🔍 Fetching links for all {len(full_album_list)} albums...{Style.RESET_ALL}")
+            for i, (artist, album) in enumerate(full_album_list, 1):
+                print(
+                    f"  {Fore.CYAN}   ({i}/{len(full_album_list)}) {artist} – {album}...{Style.RESET_ALL}",
+                    end="", flush=True,
+                )
+
+                found = False
+                url = None
+                match_type = None
+                source = None
+
+                if not no_bandcamp:
+                    url, match_type = search_bandcamp(artist, album)
+                    if url:
+                        source = "bandcamp"
+                        tag = "💿" if match_type == "album" else "🎤"
+                        print(f" {Fore.GREEN}{tag} BC found!{Style.RESET_ALL}")
+                        found = True
+
+                if not found and not no_qobuz:
+                    if not no_bandcamp:
+                        time.sleep(RATE_LIMIT)
+                    url, match_type = search_qobuz(artist, album)
+                    if url:
+                        source = "qobuz"
+                        print(f" {Fore.GREEN}💿 Qobuz found!{Style.RESET_ALL}")
+                        found = True
+
+                if not found:
+                    print(f" {Fore.RED}❌{Style.RESET_ALL}")
+
+                all_album_links[(artist, album)] = (url, match_type, source)
+
+                if i < len(full_album_list):
+                    time.sleep(RATE_LIMIT)
+
+        # Display album tree with inline links
         print()
+        for artist_info in artists_data:
+            artist_name = artist_info["name"]
+            print(f"  {Fore.YELLOW}🎤 {artist_name}{Style.RESET_ALL}")
+
+            for album in artist_info["albums"]:
+                name = album["name"]
+                format_str = album["format_str"]
+                count = album["track_count"]
+                size_str = album["size_str"]
+                all_lossless = album["all_lossless"]
+                lossy_fmts = album["lossy_fmts"]
+                is_loose = album.get("is_loose", False)
+                format_color = album.get("format_color", Fore.GREEN)
+
+                if is_loose:
+                    icon = "📁"
+                    name_color = Fore.LIGHTYELLOW_EX
+                else:
+                    icon = "💿"
+                    name_color = Fore.WHITE
+
+                line = (
+                    f"     ├── {icon} {name_color}{name}{Style.RESET_ALL}"
+                    f"  [{format_color}{format_str}{Style.RESET_ALL}]"
+                    f" ({count} tracks, {size_str})"
+                )
+                if not all_lossless:
+                    line += f"  {Fore.RED}⚠️  Non-lossless: {', '.join(lossy_fmts)}{Style.RESET_ALL}"
+
+                link_info = all_album_links.get((artist_name, name))
+                if link_info and link_info[0]:
+                    url, match_type, source = link_info
+                    if source == "bandcamp":
+                        suffix = " (artist)" if match_type != "album" else ""
+                        line += f"  {Fore.CYAN}🔗 BC{suffix}: {url}{Style.RESET_ALL}"
+                    elif source == "qobuz":
+                        line += f"  {Fore.GREEN}🔗 Qobuz: {url}{Style.RESET_ALL}"
+
+                print(line)
+
+            print()
 
     # Summary
     print(f"{Fore.CYAN}╔══════════════════════════════════════════════════════════════╗")
@@ -483,10 +600,18 @@ def main():
 
     # Shopping list
     if shopping_list:
-        # Fetch purchase links for shopping list albums
+        # Fetch purchase links for shopping list albums (skipped in --all-links mode;
+        # links were already fetched for all albums above)
         bandcamp_results = {}
         qobuz_results = {}
-        if not no_bandcamp or not no_qobuz:
+        if all_links:
+            # Populate from the already-fetched all_album_links dict
+            for (artist, album), (url, match_type, source) in all_album_links.items():
+                if source == "bandcamp":
+                    bandcamp_results[(artist, album)] = (url, match_type)
+                elif source == "qobuz":
+                    qobuz_results[(artist, album)] = (url, match_type)
+        elif not no_bandcamp or not no_qobuz:
             print()
             print(f"  {Fore.CYAN}🔍 Searching for purchase links...{Style.RESET_ALL}")
             for i, (artist, album, _) in enumerate(shopping_list, 1):
@@ -551,9 +676,10 @@ def main():
         bc_found = sum(1 for v in bandcamp_results.values() if v[0]) if bandcamp_results else 0
         qb_found = sum(1 for v in qobuz_results.values() if v[0]) if qobuz_results else 0
         print(f"\n  {Fore.RED}Total {len(shopping_list)} albums to acquire in lossless format.{Style.RESET_ALL}")
-        if bandcamp_results:
+        show_source_counts = not all_links
+        if show_source_counts and bandcamp_results:
             print(f"  {Fore.CYAN}Bandcamp links found: {bc_found}/{len(shopping_list)}{Style.RESET_ALL}")
-        if qobuz_results:
+        if show_source_counts and qobuz_results:
             print(f"  {Fore.GREEN}Qobuz links found: {qb_found}/{len(shopping_list) - bc_found}{Style.RESET_ALL}")
     else:
         print(f"\n  {Fore.GREEN}✅ All albums are in lossless format!{Style.RESET_ALL}")
@@ -572,6 +698,7 @@ def main():
             shopping_list=shopping_list,
             bandcamp_results=bandcamp_results if shopping_list else {},
             qobuz_results=qobuz_results if shopping_list else {},
+            all_album_links=all_album_links if all_links else None,
         )
         print(f"\n  {Fore.CYAN}📝 Report saved: {md_path}{Style.RESET_ALL}")
 
