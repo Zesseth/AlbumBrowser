@@ -1,5 +1,4 @@
 import sys
-import os
 from pathlib import Path
 from colorama import init, Fore, Style
 
@@ -52,7 +51,9 @@ def main():
 
     total_artists = 0
     total_albums = 0
-    total_tracks = 0
+    total_lossless = 0
+    total_non_lossless = 0
+    shopping_list = []
 
     for artist_dir in artist_dirs:
         artist_name = artist_dir.name
@@ -85,41 +86,56 @@ def main():
             total_size = sum(f.stat().st_size for f in tracks)
             size_str = format_file_size(total_size)
 
-            # Häviötön = vihreä, häviöllinen = magenta
-            is_lossless = any(fmt in LOSSLESS_FORMATS for fmt in formats)
-            format_color = Fore.GREEN if is_lossless else Fore.MAGENTA
+            # Selvitä häviöttömät ja häviölliset formaatit
+            lossless_fmts = [fmt for fmt in formats if fmt in LOSSLESS_FORMATS]
+            lossy_fmts = [fmt for fmt in formats if fmt not in LOSSLESS_FORMATS]
+            all_lossless = len(lossy_fmts) == 0
 
-            print(
+            if all_lossless:
+                format_color = Fore.GREEN
+                total_lossless += 1
+            else:
+                format_color = Fore.MAGENTA
+                total_non_lossless += 1
+                shopping_list.append((artist_name, album_name, lossy_fmts))
+
+            # Albumirivi
+            line = (
                 f"     ├── 💿 {Fore.WHITE}{album_name}{Style.RESET_ALL}"
                 f"  [{format_color}{format_str}{Style.RESET_ALL}]"
                 f" ({len(tracks)} kpl, {size_str})"
             )
-
-            # Kappaleet
-            for i, track in enumerate(tracks):
-                total_tracks += 1
-                track_name = track.stem
-                connector = "└── " if i == len(tracks) - 1 else "├── "
-                print(f"     │      {Fore.LIGHTBLACK_EX}{connector}{Fore.LIGHTWHITE_EX}♪ {track_name}{Style.RESET_ALL}")
-
-            print(f"     {Fore.LIGHTBLACK_EX}│{Style.RESET_ALL}")
+            if not all_lossless:
+                line += f"  {Fore.RED}⚠️  Ei-lossless: {', '.join(lossy_fmts)}{Style.RESET_ALL}"
+            print(line)
 
         # Irralliset kappaleet (suoraan artistin kansiossa)
         if loose_files:
             total_albums += 1
             formats = sorted(set(f.suffix.lstrip(".").upper() for f in loose_files))
-            print(
+            format_str = " / ".join(formats)
+            lossy_fmts = [fmt for fmt in formats if fmt not in LOSSLESS_FORMATS]
+            all_lossless = len(lossy_fmts) == 0
+
+            total_size = sum(f.stat().st_size for f in loose_files)
+            size_str = format_file_size(total_size)
+
+            if all_lossless:
+                format_color = Fore.GREEN
+                total_lossless += 1
+            else:
+                format_color = Fore.MAGENTA
+                total_non_lossless += 1
+                shopping_list.append((artist_name, "(Irrallisia kappaleita)", lossy_fmts))
+
+            line = (
                 f"     ├── 📁 {Fore.LIGHTYELLOW_EX}(Irrallisia kappaleita){Style.RESET_ALL}"
-                f"  [{' / '.join(formats)}]"
+                f"  [{format_color}{format_str}{Style.RESET_ALL}]"
+                f" ({len(loose_files)} kpl, {size_str})"
             )
-
-            for i, track in enumerate(loose_files):
-                total_tracks += 1
-                track_name = track.stem
-                connector = "└── " if i == len(loose_files) - 1 else "├── "
-                print(f"     │      {Fore.LIGHTBLACK_EX}{connector}{Fore.LIGHTWHITE_EX}♪ {track_name}{Style.RESET_ALL}")
-
-            print(f"     {Fore.LIGHTBLACK_EX}│{Style.RESET_ALL}")
+            if not all_lossless:
+                line += f"  {Fore.RED}⚠️  Ei-lossless: {', '.join(lossy_fmts)}{Style.RESET_ALL}"
+            print(line)
 
         print()
 
@@ -127,10 +143,25 @@ def main():
     print(f"{Fore.CYAN}╔══════════════════════════════════════════════════════════════╗")
     print(f"║                        YHTEENVETO                           ║")
     print(f"╠══════════════════════════════════════════════════════════════╣{Style.RESET_ALL}")
-    print(f"║  {Fore.YELLOW}Artisteja:  {total_artists:6}{Style.RESET_ALL}                                       ║")
-    print(f"║  {Fore.WHITE}Albumeita:  {total_albums:6}{Style.RESET_ALL}                                       ║")
-    print(f"║  {Fore.LIGHTWHITE_EX}Kappaleita: {total_tracks:6}{Style.RESET_ALL}                                       ║")
+    print(f"║  {Fore.YELLOW}Artisteja:       {total_artists:6}{Style.RESET_ALL}                                  ║")
+    print(f"║  {Fore.WHITE}Albumeita:       {total_albums:6}{Style.RESET_ALL}                                  ║")
+    print(f"║  {Fore.GREEN}Lossless:        {total_lossless:6}{Style.RESET_ALL}                                  ║")
+    print(f"║  {Fore.MAGENTA}Ei-lossless:     {total_non_lossless:6}{Style.RESET_ALL}                                  ║")
     print(f"{Fore.CYAN}╚══════════════════════════════════════════════════════════════╝{Style.RESET_ALL}")
+
+    # Ostoslista
+    if shopping_list:
+        print()
+        print(f"{Fore.RED}╔══════════════════════════════════════════════════════════════╗")
+        print(f"║          🛒  OSTOSLISTA – Hankittava lossless-versio        ║")
+        print(f"╠══════════════════════════════════════════════════════════════╣{Style.RESET_ALL}")
+        for artist, album, lossy_fmts in shopping_list:
+            fmt_str = ', '.join(lossy_fmts)
+            print(f"  {Fore.YELLOW}{artist}{Style.RESET_ALL} – {Fore.WHITE}{album}{Style.RESET_ALL}  [{Fore.MAGENTA}{fmt_str}{Style.RESET_ALL}]")
+        print(f"{Fore.RED}╚══════════════════════════════════════════════════════════════╝{Style.RESET_ALL}")
+        print(f"\n  {Fore.RED}Yhteensä {len(shopping_list)} albumia hankittavana lossless-formaatissa.{Style.RESET_ALL}")
+    else:
+        print(f"\n  {Fore.GREEN}✅ Kaikki albumit ovat lossless-formaatissa!{Style.RESET_ALL}")
 
 
 if __name__ == "__main__":
