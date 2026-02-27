@@ -1,12 +1,12 @@
 # AlbumBrowser
 
-A command-line Python tool that scans your local music library, identifies which albums are in lossless vs. lossy formats, builds a prioritised shopping list for lossless upgrades, and automatically searches **Bandcamp** and **Qobuz** for purchase links. Results are written to the terminal in a colour-coded tree view and saved as a neatly formatted Markdown report.
+A command-line tool that scans your local music library, reports lossless vs. lossy albums, and generates a shopping list with purchase links from Bandcamp and Qobuz for any albums not yet in lossless format.
 
 ---
 
 ## Table of Contents
 
-- [What it does](#what-it-does)
+- [Features](#features)
 - [Requirements](#requirements)
 - [Installation](#installation)
   - [Linux](#linux)
@@ -14,35 +14,31 @@ A command-line Python tool that scans your local music library, identifies which
   - [macOS](#macos)
 - [Usage](#usage)
   - [Basic usage](#basic-usage)
-  - [Optional flags](#optional-flags)
+  - [Options](#options)
   - [Expected folder structure](#expected-folder-structure)
+- [Output](#output)
 - [Reading the Markdown report](#reading-the-markdown-report)
 - [Supported audio formats](#supported-audio-formats)
 
 ---
 
-## What it does
+## Features
 
-1. **Scans** a music library directory that follows the `Music / Artist / Album` folder convention.
-2. **Detects** audio file formats for every album (MP3, FLAC, WAV, AAC, etc.).
-3. **Flags** albums that contain lossy formats (⚠️) and those that are fully lossless (✅).
-4. **Prints** a colour-coded tree to the terminal showing every artist and album with format, track count, and total size.
-5. **Builds a shopping list** of albums that need a lossless upgrade.
-6. **Searches Bandcamp and Qobuz** automatically and attaches purchase links to each shopping-list entry.
-7. **Generates a Markdown report** (`MD/result.md`) that contains the full library overview, a summary table, and the shopping list with clickable links.
+- Scans a music directory structured as `Artist / Album / tracks`
+- Detects lossless formats: FLAC, APE, WAV, AIFF, WV, ALAC
+- Flags non-lossless albums (MP3, AAC, OGG, etc.) with a warning
+- Displays a summary table (total artists, albums, lossless/non-lossless counts)
+- Searches Bandcamp first for purchase links; falls back to Qobuz when no Bandcamp match is found
+- Generates a Markdown report (`MD/result.md`) with the full library overview
 
 ---
 
 ## Requirements
 
-- **Python 3.10 or newer**
-- The following third-party Python packages:
-
-| Package | Purpose |
-|:---|:---|
-| `requests` | HTTP requests to Bandcamp / Qobuz |
-| `beautifulsoup4` | HTML parsing of search results |
-| `colorama` | Cross-platform coloured terminal output |
+- **Python 3.10+**
+- [requests](https://pypi.org/project/requests/)
+- [beautifulsoup4](https://pypi.org/project/beautifulsoup4/)
+- [colorama](https://pypi.org/project/colorama/)
 
 ---
 
@@ -50,7 +46,7 @@ A command-line Python tool that scans your local music library, identifies which
 
 ### Linux
 
-1. **Install Python 3.10+** (most distributions already have it):
+1. **Install Python 3.10+** (most distributions already include it):
 
    ```bash
    # Debian / Ubuntu
@@ -166,52 +162,46 @@ python album_browser.py "C:\Users\YourName\Music"
 python album_browser.py "C:\Users\YourName\Music"
 ```
 
-The script will:
-- Print a colour-coded library tree to the terminal.
-- Search Bandcamp and Qobuz for any albums that need a lossless upgrade.
-- Save a Markdown report to `MD/result.md` (relative to the script's location).
-
 ---
 
-### Optional flags
+### Options
 
-| Flag | Description |
+| Option | Description |
 |:---|:---|
-| `--no-bandcamp` | Skip the Bandcamp search (faster run) |
-| `--no-qobuz` | Skip the Qobuz search (faster run) |
-| `--no-report` | Do not generate the `MD/result.md` Markdown report |
+| `--no-bandcamp` | Skip Bandcamp search |
+| `--no-qobuz` | Skip Qobuz search |
+| `--no-report` | Skip Markdown report generation |
 
 **Examples:**
 
 ```bash
-# Scan without any web searches
-python3 album_browser.py "/path/to/Music" --no-bandcamp --no-qobuz
-
-# Scan and search only Qobuz, skip the report
-python3 album_browser.py "/path/to/Music" --no-bandcamp --no-report
+python album_browser.py "C:\Users\User\Music"
+python album_browser.py ~/Music --no-bandcamp
 ```
 
 ---
 
 ### Expected folder structure
 
-AlbumBrowser expects your music library to be organised as follows:
-
 ```
 Music/
 ├── Artist Name/
 │   ├── Album Title/
-│   │   ├── 01 - Track Title.flac
-│   │   ├── 02 - Track Title.flac
-│   │   └── ...
+│   │   ├── 01 - Track.flac
+│   │   └── 02 - Track.flac
 │   └── Another Album/
-│       ├── 01 - Track Title.mp3
-│       └── ...
+│       └── 01 - Track.mp3
 └── Another Artist/
     └── ...
 ```
 
-Audio files placed **directly inside an artist folder** (without an album sub-folder) are listed as *"(Loose tracks)"* in the report.
+Loose audio files placed directly inside an artist folder are grouped under **(Irrallisia kappaleita)**.
+
+---
+
+## Output
+
+The tool prints a colour-coded tree of your library to the terminal and, unless `--no-report` is given, writes a Markdown summary to `MD/result.md` next to the script.
 
 ---
 
@@ -222,7 +212,7 @@ After a successful run, a report is saved to **`MD/result.md`** next to `album_b
 The report contains:
 - 🎤 **Artist sections** listing every album with format, track count, and size.
 - 📊 **Summary table** with total artist, album, lossless, and non-lossless counts.
-- 🛒 **Shopping list** of albums to upgrade, with direct Bandcamp / Qobuz purchase links.
+- 🛒 **Shopping list** of albums to upgrade, with a purchase link per entry (Bandcamp preferred, Qobuz as fallback).
 
 **Ways to view the rendered Markdown:**
 
@@ -246,11 +236,11 @@ The report contains:
 | FLAC | ✅ Lossless |
 | WAV | ✅ Lossless |
 | AIFF | ✅ Lossless |
-| ALAC (.m4a) | ✅ Lossless |
+| ALAC (.alac) | ✅ Lossless |
 | APE | ✅ Lossless |
 | WavPack (.wv) | ✅ Lossless |
 | MP3 | ⚠️ Lossy |
-| AAC (.m4a / .aac) | ⚠️ Lossy |
+| M4A / AAC (.m4a / .aac) | ⚠️ Lossy |
 | OGG | ⚠️ Lossy |
 | WMA | ⚠️ Lossy |
 | OPUS | ⚠️ Lossy |
@@ -259,4 +249,4 @@ The report contains:
 
 ## License
 
-See [LICENSE](LICENSE) for details.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
