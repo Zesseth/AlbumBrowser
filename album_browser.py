@@ -291,16 +291,20 @@ def generate_markdown_report(
         for i, (artist, album, lossy_fmts) in enumerate(shopping_list, 1):
             fmt_str = ", ".join(lossy_fmts)
 
-            # Find purchase link
+            # Find purchase link(s)
             link_str = "—"
             bc = bandcamp_results.get((artist, album))
+            qb = qobuz_results.get((artist, album))
             if bc and bc[0]:
                 url, match_type = bc
                 suffix = " (artist)" if match_type != "album" else ""
                 link_str = f"[🔗 Bandcamp{suffix}]({url})"
                 bc_found += 1
+                # Supplement artist-only BC hit with Qobuz link
+                if match_type != "album" and qb and qb[0]:
+                    link_str += f" · [🔗 Qobuz]({qb[0]})"
+                    qb_found += 1
             else:
-                qb = qobuz_results.get((artist, album))
                 if qb and qb[0]:
                     url, _ = qb
                     link_str = f"[🔗 Qobuz]({url})"
@@ -496,18 +500,23 @@ def main():
                 )
 
                 found = False
+                bc_artist_only = False
 
                 # 1. Bandcamp search
                 if not no_bandcamp:
                     url, match_type = search_bandcamp(artist, album)
                     bandcamp_results[(artist, album)] = (url, match_type)
                     if url:
-                        tag = "💿" if match_type == "album" else "🎤"
-                        print(f" {Fore.GREEN}{tag} BC found!{Style.RESET_ALL}")
-                        found = True
+                        if match_type == "album":
+                            print(f" {Fore.GREEN}💿 BC found!{Style.RESET_ALL}")
+                            found = True
+                        else:
+                            # Artist page only — not a confirmed album match
+                            print(f" {Fore.GREEN}🎤 BC artist{Style.RESET_ALL}", end="", flush=True)
+                            bc_artist_only = True
 
-                # 2. Qobuz fallback (if not found on Bandcamp)
-                if not found and not no_qobuz:
+                # 2. Qobuz search (fallback OR supplement for artist-only BC hit)
+                if (not found or bc_artist_only) and not no_qobuz:
                     if not no_bandcamp:
                         time.sleep(RATE_LIMIT)
                     url, match_type = search_qobuz(artist, album)
@@ -515,6 +524,13 @@ def main():
                     if url:
                         print(f" {Fore.GREEN}💿 Qobuz found!{Style.RESET_ALL}")
                         found = True
+                    elif bc_artist_only:
+                        # Qobuz didn't find it either, keep BC artist link
+                        print()
+                        found = True
+                elif bc_artist_only:
+                    print()
+                    found = True
 
                 if not found:
                     print(f" {Fore.RED}❌{Style.RESET_ALL}")
@@ -530,17 +546,20 @@ def main():
             fmt_str = ', '.join(lossy_fmts)
             line = f"  {Fore.YELLOW}{artist}{Style.RESET_ALL} – {Fore.WHITE}{album}{Style.RESET_ALL}  [{Fore.MAGENTA}{fmt_str}{Style.RESET_ALL}]"
 
-            # Add Bandcamp link if found
+            # Add purchase links
             bc = bandcamp_results.get((artist, album))
+            qb = qobuz_results.get((artist, album))
             if bc and bc[0]:
                 url, match_type = bc
                 if match_type == "album":
                     line += f"  {Fore.CYAN}🔗 BC: {url}{Style.RESET_ALL}"
                 else:
                     line += f"  {Fore.CYAN}🔗 BC: {url} (artist){Style.RESET_ALL}"
+                    # Supplement with Qobuz if available
+                    if qb and qb[0]:
+                        line += f"  {Fore.GREEN}🔗 Qobuz: {qb[0]}{Style.RESET_ALL}"
             else:
-                # Add Qobuz link if found (fallback)
-                qb = qobuz_results.get((artist, album))
+                # Qobuz-only fallback
                 if qb and qb[0]:
                     url, _ = qb
                     line += f"  {Fore.GREEN}🔗 Qobuz: {url}{Style.RESET_ALL}"
