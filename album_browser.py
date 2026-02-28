@@ -438,7 +438,6 @@ def main():
                 "all_lossless": all_lossless,
                 "lossy_fmts": lossy_fmts,
                 "is_loose": False,
-                "format_color": format_color,
             })
 
             # Album row (deferred in --all-links mode)
