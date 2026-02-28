@@ -326,7 +326,7 @@ def generate_markdown_report(
 
         lines.append("")
         lines.append(f"> **Total {len(shopping_list)}** albums to acquire in lossless format.  ")
-        show_source_counts = all_album_links is None
+        show_source_counts = not all_album_links
         if show_source_counts and bandcamp_results:
             lines.append(f"> Bandcamp links found: **{bc_found}** / {len(shopping_list)}  ")
         if show_source_counts and qobuz_results:
@@ -676,7 +676,7 @@ def main():
         bc_found = sum(1 for v in bandcamp_results.values() if v[0]) if bandcamp_results else 0
         qb_found = sum(1 for v in qobuz_results.values() if v[0]) if qobuz_results else 0
         print(f"\n  {Fore.RED}Total {len(shopping_list)} albums to acquire in lossless format.{Style.RESET_ALL}")
-        show_source_counts = not all_links
+        show_source_counts = not all_album_links
         if show_source_counts and bandcamp_results:
             print(f"  {Fore.CYAN}Bandcamp links found: {bc_found}/{len(shopping_list)}{Style.RESET_ALL}")
         if show_source_counts and qobuz_results:
