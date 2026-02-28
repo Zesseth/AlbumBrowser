@@ -282,8 +282,8 @@ def generate_markdown_report(
         lines.append("")
         lines.append("## 🛒 Shopping List — Albums to Get in Lossless")
         lines.append("")
-        lines.append("| # | Artist | Album | Format | Link |")
-        lines.append("|---:|:---|:---|:---:|:---|")
+        lines.append("| # | Artist | Album | Format | Bandcamp | Qobuz |")
+        lines.append("|---:|:---|:---|:---:|:---|:---|")
 
         bc_found = 0
         qb_found = 0
@@ -291,33 +291,28 @@ def generate_markdown_report(
         for i, (artist, album, lossy_fmts) in enumerate(shopping_list, 1):
             fmt_str = ", ".join(lossy_fmts)
 
-            # Find purchase link(s)
-            link_str = "—"
+            # Find purchase links
+            bc_link = "—"
+            qb_link = "—"
             bc = bandcamp_results.get((artist, album))
             qb = qobuz_results.get((artist, album))
             if bc and bc[0]:
                 url, match_type = bc
                 suffix = " (artist)" if match_type != "album" else ""
-                link_str = f"[🔗 Bandcamp{suffix}]({url})"
+                bc_link = f"[🔗 Bandcamp{suffix}]({url})"
                 bc_found += 1
-                # Supplement artist-only BC hit with Qobuz link
-                if match_type != "album" and qb and qb[0]:
-                    link_str += f" · [🔗 Qobuz]({qb[0]})"
-                    qb_found += 1
-            else:
-                if qb and qb[0]:
-                    url, _ = qb
-                    link_str = f"[🔗 Qobuz]({url})"
-                    qb_found += 1
+            if qb and qb[0]:
+                qb_link = f"[🔗 Qobuz]({qb[0]})"
+                qb_found += 1
 
-            lines.append(f"| {i} | **{artist}** | {album} | `{fmt_str}` | {link_str} |")
+            lines.append(f"| {i} | **{artist}** | {album} | `{fmt_str}` | {bc_link} | {qb_link} |")
 
         lines.append("")
         lines.append(f"> **Total {len(shopping_list)}** albums to acquire in lossless format.  ")
         if bandcamp_results:
             lines.append(f"> Bandcamp links found: **{bc_found}** / {len(shopping_list)}  ")
         if qobuz_results:
-            lines.append(f"> Qobuz links found: **{qb_found}** / {len(shopping_list) - bc_found}")
+            lines.append(f"> Qobuz links found: **{qb_found}** / {len(shopping_list)}")
         lines.append("")
     else:
         lines.append("")
