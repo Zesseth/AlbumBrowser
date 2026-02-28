@@ -1,3 +1,4 @@
+import difflib
 import sys
 import time
 from datetime import datetime
@@ -44,6 +45,32 @@ def format_file_size(size_bytes: int) -> str:
 def _normalize(text: str) -> str:
     """Normalizes text for comparison (lowercase, strips extra whitespace)."""
     return " ".join(text.lower().split())
+
+
+def _is_similar(a: str, b: str, threshold: float = 0.80) -> bool:
+    """Returns True if two normalized strings are similar enough to be a match.
+
+    Uses SequenceMatcher ratio, which correctly penalises short truncated strings
+    (e.g. "children of" should NOT match "children of bodom").
+    Also handles common "The Artist" vs "Artist" name variations.
+
+    Args:
+        a: First normalized string to compare.
+        b: Second normalized string to compare.
+        threshold: Minimum SequenceMatcher ratio (0.0–1.0) required for a match.
+                   Defaults to 0.80 — high enough to reject short truncations
+                   while accepting minor spelling differences.
+    """
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    # Handle leading "the " article variants (e.g. "beatles" == "the beatles")
+    def _strip_the(s: str) -> str:
+        return s[4:] if s.startswith("the ") else s
+    if _strip_the(a) == _strip_the(b):
+        return True
+    return difflib.SequenceMatcher(None, a, b).ratio() >= threshold
 
 
 def _search_bandcamp(query: str, item_type: str) -> list[dict]:
@@ -99,22 +126,14 @@ def search_bandcamp(artist_name: str, album_name: str) -> tuple[str | None, str 
     artist_norm = _normalize(artist_name)
     album_norm = _normalize(album_name)
 
-    # 1. Search for album
+    # 1. Search for album — require BOTH artist AND album to match
     query = f"{artist_name} {album_name}"
     results = _search_bandcamp(query, "a")
 
     for r in results:
         r_artist = _normalize(r["artist"])
         r_album = _normalize(r["name"])
-        # Check if artist and album name are close enough
-        if artist_norm in r_artist or r_artist in artist_norm:
-            if album_norm in r_album or r_album in album_norm:
-                return (r["url"], "album")
-
-    # Looser match: artist-only match in album search
-    for r in results:
-        r_artist = _normalize(r["artist"])
-        if artist_norm in r_artist or r_artist in artist_norm:
+        if _is_similar(artist_norm, r_artist) and _is_similar(album_norm, r_album):
             return (r["url"], "album")
 
     time.sleep(RATE_LIMIT)
@@ -124,12 +143,8 @@ def search_bandcamp(artist_name: str, album_name: str) -> tuple[str | None, str 
 
     for r in results:
         r_name = _normalize(r["name"])
-        if artist_norm in r_name or r_name in artist_norm:
+        if _is_similar(artist_norm, r_name):
             return (r["url"], "artist")
-
-    # Return first artist result if found
-    if results:
-        return (results[0]["url"], "artist")
 
     return (None, None)
 
