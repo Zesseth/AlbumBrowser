@@ -503,6 +503,7 @@ def main():
             (a["name"], alb["name"])
             for a in artists_data
             for alb in a["albums"]
+            if not alb.get("is_loose")
         ]
 
         if full_album_list and (not no_bandcamp or not no_qobuz):
