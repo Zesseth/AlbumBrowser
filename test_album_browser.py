@@ -1,9 +1,12 @@
 """Tests for album_browser.py — focused on Bandcamp search accuracy improvements."""
 import difflib
+import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from album_browser import _is_similar, _normalize, search_bandcamp
+from album_browser import _is_similar, _normalize, search_bandcamp, main
 
 
 class TestNormalize(unittest.TestCase):
@@ -197,3 +200,113 @@ class TestSearchBandcamp(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# Helpers for integration-style main() tests
+# ---------------------------------------------------------------------------
+
+def _make_music_dir(base: Path) -> Path:
+    """Creates a small mock music directory tree and returns its path.
+
+    Structure:
+      Artist A/
+        Lossless Album/  — 2 FLAC files
+        Lossy Album/     — 1 MP3 file
+      Artist B/
+        Only Lossless/   — 1 FLAC file
+    """
+    (base / "Artist A" / "Lossless Album").mkdir(parents=True)
+    (base / "Artist A" / "Lossy Album").mkdir(parents=True)
+    (base / "Artist B" / "Only Lossless").mkdir(parents=True)
+
+    (base / "Artist A" / "Lossless Album" / "01.flac").write_bytes(b"\x00" * 1024)
+    (base / "Artist A" / "Lossless Album" / "02.flac").write_bytes(b"\x00" * 1024)
+    (base / "Artist A" / "Lossy Album" / "01.mp3").write_bytes(b"\x00" * 512)
+    (base / "Artist B" / "Only Lossless" / "01.flac").write_bytes(b"\x00" * 2048)
+
+    return base
+
+
+class TestAllAlbumLinksFlag(unittest.TestCase):
+    """Integration tests for the --all-album-links switch."""
+
+    @staticmethod
+    def _run_main(music_dir: Path, extra_args: list[str]) -> str:
+        """Runs main() with patched sys.argv and returns captured stdout."""
+        import io
+
+        argv = ["album_browser.py", str(music_dir)] + extra_args
+        with patch.object(sys, "argv", argv), \
+             patch("sys.stdout", new_callable=io.StringIO) as mock_out, \
+             patch("album_browser.search_bandcamp", return_value=(None, None)), \
+             patch("album_browser.search_qobuz", return_value=(None, None)), \
+             patch("album_browser.time.sleep"):
+            main()
+            return mock_out.getvalue()
+
+    def test_all_album_links_fetches_for_every_album(self):
+        """With --all-album-links, search_bandcamp is called for ALL albums."""
+        with tempfile.TemporaryDirectory() as tmp:
+            music_dir = _make_music_dir(Path(tmp))
+            argv = ["album_browser.py", str(music_dir), "--all-album-links",
+                    "--no-qobuz", "--no-report"]
+            with patch.object(sys, "argv", argv), \
+                 patch("album_browser.search_bandcamp", return_value=(None, None)) as mock_bc, \
+                 patch("album_browser.search_qobuz", return_value=(None, None)), \
+                 patch("album_browser.time.sleep"):
+                main()
+            # 3 albums total: Lossless Album, Lossy Album, Only Lossless
+            self.assertEqual(mock_bc.call_count, 3)
+
+    def test_default_mode_only_fetches_for_lossy_albums(self):
+        """Without --all-album-links, search_bandcamp is called only for lossy albums."""
+        with tempfile.TemporaryDirectory() as tmp:
+            music_dir = _make_music_dir(Path(tmp))
+            argv = ["album_browser.py", str(music_dir), "--no-qobuz", "--no-report"]
+            with patch.object(sys, "argv", argv), \
+                 patch("album_browser.search_bandcamp", return_value=(None, None)) as mock_bc, \
+                 patch("album_browser.search_qobuz", return_value=(None, None)), \
+                 patch("album_browser.time.sleep"):
+                main()
+            # Only 1 lossy album (Lossy Album by Artist A)
+            self.assertEqual(mock_bc.call_count, 1)
+
+    def test_all_album_links_no_shopping_list_box(self):
+        """With --all-album-links, the SHOPPING LIST box must NOT appear."""
+        with tempfile.TemporaryDirectory() as tmp:
+            music_dir = _make_music_dir(Path(tmp))
+            output = self._run_main(music_dir, ["--all-album-links", "--no-report"])
+            self.assertNotIn("SHOPPING LIST", output)
+
+    def test_default_mode_shows_shopping_list_box(self):
+        """Without --all-album-links, the SHOPPING LIST box IS shown for lossy albums."""
+        with tempfile.TemporaryDirectory() as tmp:
+            music_dir = _make_music_dir(Path(tmp))
+            output = self._run_main(music_dir, ["--no-report"])
+            self.assertIn("SHOPPING LIST", output)
+
+    def test_all_album_links_inline_link_in_tree(self):
+        """With --all-album-links and a BC match, the link appears in the album tree."""
+        with tempfile.TemporaryDirectory() as tmp:
+            music_dir = _make_music_dir(Path(tmp))
+            argv = ["album_browser.py", str(music_dir), "--all-album-links",
+                    "--no-qobuz", "--no-report"]
+            fake_url = "https://artistb.bandcamp.com/album/only-lossless"
+            import io
+
+            def _bc_side_effect(artist, album):
+                if artist == "Artist B" and album == "Only Lossless":
+                    return (fake_url, "album")
+                return (None, None)
+
+            with patch.object(sys, "argv", argv), \
+                 patch("sys.stdout", new_callable=io.StringIO) as mock_out, \
+                 patch("album_browser.search_bandcamp", side_effect=_bc_side_effect), \
+                 patch("album_browser.search_qobuz", return_value=(None, None)), \
+                 patch("album_browser.time.sleep"):
+                main()
+            output = mock_out.getvalue()
+        # The link must appear in the tree output, not in a separate section
+        self.assertIn(fake_url, output)
+        self.assertNotIn("SHOPPING LIST", output)
