@@ -171,12 +171,14 @@ python album_browser.py "C:\Users\YourName\Music"
 | `--no-bandcamp` | Skip Bandcamp search |
 | `--no-qobuz` | Skip Qobuz search |
 | `--no-report` | Skip Markdown report generation |
+| `--all-album-links` | Fetch and display purchase links for **every** album inline, not just non-lossless ones. No separate shopping list is shown in this mode. |
 
 **Examples:**
 
 ```bash
 python album_browser.py "C:\Users\User\Music"
 python album_browser.py ~/Music --no-bandcamp
+python album_browser.py ~/Music --all-album-links
 ```
 
 ---
